@@ -91,7 +91,7 @@ end architecture;
 
 #[test]
 fn record_array_past_the_pack_cap_stays_dynamic() {
-    // 64 * (128 + 4) = 8448, past MAX_PK_BITS (2048).
+    // 128 * (128 + 4) = 16896, past MAX_PK_BITS (16384).
     let sv = lowered(
         r#"
 library ieee;
@@ -102,7 +102,7 @@ architecture a of t is
     x : std_logic_vector(31 downto 0);
     y : std_logic;
   end record;
-  type arr_t is array (0 to 63) of rec_t;
+  type arr_t is array (0 to 127) of rec_t;
   signal r : arr_t;
   signal clk : std_logic;
 begin
@@ -117,8 +117,12 @@ end architecture;
     );
     let p = process0(&sv);
     assert!(
-        p.contains(".d["),
+        !sv.contains("bit [16895:0]"),
         "an array past the pack cap was packed"
+    );
+    assert!(
+        p.contains("vh_pww"),
+        "an array past the pack cap did not keep the word driver"
     );
 }
 
@@ -152,11 +156,11 @@ end architecture;
         !sv.contains("bit [143:0]"),
         "two drivers were packed into one vector"
     );
-    // The field stays a per-element driver: eight nibbles into `vh_pf`,
-    // not one write of the whole vector.
+    // Zero-delay field writes stay on the word driver from the merged
+    // array-element change, not one write of the whole vector.
     assert!(
-        process0(&sv).contains("vh_pf"),
-        "the per-element field driver was dropped"
+        process0(&sv).contains("vh_pww"),
+        "a second driver did not keep the word driver"
     );
 }
 
@@ -187,6 +191,10 @@ end architecture;
     assert!(
         !sv.contains("bit [143:0]"),
         "a delayed part assignment was packed into one vector"
+    );
+    assert!(
+        sv.contains("64'sd10000000") && sv.contains("vh_drs_"),
+        "the delayed part assignment lost its own transaction"
     );
 }
 
